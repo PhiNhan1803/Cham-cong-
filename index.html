@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- Meta tags cho ứng dụng di động (PWA) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Tính Công Lighting">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#2563eb">
+    
+    <title>Bảng Tính Công Nhân Sự Phim</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+        body { 
+            font-family: 'Inter', sans-serif; 
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        /* Tối ưu hóa cho di động */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        input, select, textarea { font-size: 16px !important; } /* Tránh iOS tự động phóng to khi focus */
+        
+        .staff-checkbox:checked + label { background-color: #2563eb; color: white; border-color: #2563eb; }
+        .staff-label { touch-action: manipulation; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+        
+        @media print { .no-print { display: none !important; } body { background: white; padding: 0; } }
+        
+        /* Đảm bảo vùng an toàn cho iPhone (Safe Area) */
+        .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900 pb-20">
+    <div class="max-w-[1600px] mx-auto p-3 md:p-6">
+        
+        <!-- Header -->
+        <div class="no-print flex flex-col md:flex-row justify-between items-center mb-4 gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+            <div class="text-center md:text-left">
+                <h1 class="text-lg font-black text-blue-600 uppercase tracking-tight">Lighting Crew Manager</h1>
+                <p id="auth-status" class="text-[8px] text-slate-400 font-bold uppercase mt-0.5 italic">Đang kết nối...</p>
+            </div>
+            <div class="flex space-x-1 bg-slate-100 p-1 rounded-xl w-full md:w-auto overflow-x-auto no-scrollbar">
+                <button onclick="switchTab('calc')" id="btn-tab-calc" class="flex-1 md:flex-none px-4 py-2 rounded-lg font-bold transition-all bg-white text-blue-600 shadow-sm text-[10px] uppercase">Máy tính</button>
+                <button onclick="switchTab('staff')" id="btn-tab-staff" class="flex-1 md:flex-none px-4 py-2 rounded-lg font-bold transition-all text-slate-600 hover:bg-slate-200 text-[10px] uppercase">Nhân sự</button>
+                <button onclick="switchTab('history')" id="btn-tab-history" class="flex-1 md:flex-none px-4 py-2 rounded-lg font-bold transition-all text-slate-600 hover:bg-slate-200 text-[10px] uppercase">Lịch sử</button>
+            </div>
+        </div>
+
+        <!-- TAB 1: MÁY TÍNH CÔNG -->
+        <div id="tab-calc" class="block space-y-4">
+            <div class="no-print bg-white rounded-2xl shadow-sm p-4 border border-slate-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center">
+                        <span class="w-1.5 h-3 bg-orange-500 rounded-full mr-2"></span>Thông tin show
+                    </h2>
+                    <button onclick="resetToNewShow()" class="text-[9px] font-black bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg border border-blue-100 uppercase">Tạo Mới</button>
+                </div>
+                
+                <div id="edit-mode-indicator" class="hidden mb-4 bg-orange-100 text-orange-600 p-2 rounded-lg text-center text-[9px] font-black animate-pulse uppercase">
+                    Bạn đang chỉnh sửa show cũ (Lưu sẽ ghi đè)
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="text-[9px] font-bold text-slate-400 uppercase mb-1 block ml-1">Tên Dự Án</label>
+                        <input type="text" id="job-name" placeholder="Nhập tên dự án..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500">
+                    </div>
+
+                    <!-- ONSET -->
+                    <div class="bg-blue-50/50 p-3 rounded-2xl border border-blue-100">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-[9px] font-black text-blue-600 uppercase">Onset</span>
+                            <button onclick="setTimeNow('onset')" class="text-[8px] font-black bg-blue-600 text-white px-2 py-1 rounded-md uppercase">Hiện tại</button>
+                        </div>
+                        <input type="date" id="onset-date" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold mb-2">
+                        <div class="flex items-center gap-2">
+                            <input type="number" id="onset-hour" placeholder="H" class="w-1/2 p-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-center">
+                            <span class="font-bold text-slate-400">:</span>
+                            <input type="number" id="onset-min" placeholder="M" class="w-1/2 p-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-center">
+                        </div>
+                    </div>
+
+                    <!-- WRAP -->
+                    <div class="bg-orange-50/50 p-3 rounded-2xl border border-orange-100">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-[9px] font-black text-orange-600 uppercase">Wrap</span>
+                            <button onclick="setTimeNow('wrap')" class="text-[8px] font-black bg-orange-600 text-white px-2 py-1 rounded-md uppercase">Hiện tại</button>
+                        </div>
+                        <input type="date" id="wrap-date" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold mb-2">
+                        <div class="flex items-center gap-2">
+                            <input type="number" id="wrap-hour" placeholder="H" class="w-1/2 p-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-center">
+                            <span class="font-bold text-slate-400">:</span>
+                            <input type="number" id="wrap-min" placeholder="M" class="w-1/2 p-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-center">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHỌN NHÂN SỰ -->
+            <div class="no-print bg-white rounded-2xl shadow-sm p-4 border border-slate-200">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center">
+                        <span class="w-1.5 h-3 bg-blue-600 rounded-full mr-2"></span>Thành viên
+                    </h2>
+                    <div class="flex gap-2">
+                         <button onclick="selectAll(true)" class="text-[8px] font-black text-blue-500 uppercase px-2 py-1 bg-blue-50 rounded">Tất cả</button>
+                         <button onclick="selectAll(false)" class="text-[8px] font-black text-slate-400 uppercase px-2 py-1 bg-slate-50 rounded">Xóa hết</button>
+                    </div>
+                </div>
+                <!-- Grid này tự động tràn xuống trên di động -->
+                <div id="staff-selection-grid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 mb-6"></div>
+                <div class="flex justify-center border-t border-slate-100 pt-4">
+                    <button onclick="calculate()" class="w-full bg-slate-900 text-white font-black py-4 rounded-xl shadow-lg text-[10px] uppercase tracking-widest active:scale-95 transition-all">Xác nhận tính công</button>
+                </div>
+            </div>
+
+            <!-- KẾT QUẢ -->
+            <div id="result-container" class="space-y-4">
+                <div id="result-card" class="bg-white rounded-2xl shadow-sm border border-slate-200 hidden flex flex-col overflow-hidden animate-fade-in">
+                    <div class="p-4 border-b border-slate-100 flex flex-col gap-2">
+                        <p id="res-date-display" class="text-[8px] font-black text-blue-600 uppercase"></p>
+                        <h2 id="res-job-display" class="text-lg font-black text-slate-800 uppercase">Quyết toán tổ điện</h2>
+                        <div class="grid grid-cols-2 gap-2 mt-2">
+                            <div class="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                                <p class="text-[8px] font-black text-slate-400 uppercase">Giờ quay</p>
+                                <p id="total-time" class="text-sm font-black text-slate-900">0h 0p</p>
+                            </div>
+                            <div class="bg-blue-50 p-2 rounded-xl text-center border border-blue-100">
+                                <p class="text-[8px] font-black text-blue-400 uppercase">Hệ số OT</p>
+                                <p id="total-work-day" class="text-sm font-black text-blue-600">--</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto p-2">
+                        <table class="w-full text-left">
+                            <thead class="text-[8px] font-black text-slate-400 uppercase">
+                                <tr>
+                                    <th class="px-2 py-2">Tên</th>
+                                    <th class="px-2 py-2 text-center">Công</th>
+                                    <th class="px-2 py-2 text-center text-red-500">Trừ</th>
+                                    <th class="px-2 py-2 text-right">Lương</th>
+                                </tr>
+                            </thead>
+                            <tbody id="salary-table-body" class="text-[10px]"></tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="p-4 bg-slate-900 space-y-4">
+                        <div class="flex justify-between items-end">
+                            <div>
+                                <p class="text-[8px] font-black text-slate-500 uppercase">Tổng quỹ lương</p>
+                                <p id="total-group-salary" class="text-xl font-black text-blue-400">0 đ</p>
+                            </div>
+                            <p id="total-group-count" class="text-[10px] font-bold text-white">0 người</p>
+                        </div>
+                        <div class="no-print grid grid-cols-2 gap-2">
+                            <button id="save-btn" onclick="saveShowToCloud()" class="bg-blue-600 text-white py-3 rounded-xl font-black text-[9px] uppercase">Lưu Cloud</button>
+                            <button onclick="window.print()" class="bg-white/10 text-white py-3 rounded-xl font-black text-[9px] uppercase">In/PDF</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="placeholder-card" class="bg-white rounded-2xl border-2 border-dashed border-slate-200 py-10 flex items-center justify-center text-center text-slate-300 font-black text-[10px] uppercase">Chưa có dữ liệu tính</div>
+            </div>
+        </div>
+
+        <!-- TAB: NHÂN SỰ -->
+        <div id="tab-staff" class="hidden animate-fade-in space-y-4">
+            <div class="bg-white rounded-2xl shadow-sm p-4 border border-slate-200">
+                <h2 class="text-xs font-black text-slate-800 uppercase mb-3">Nhập danh sách mới</h2>
+                <textarea id="excel-paste" placeholder="Dán tên từ Excel hoặc Note (mỗi dòng 1 tên)..." class="w-full h-32 p-3 border border-slate-200 rounded-xl text-sm outline-none bg-slate-50 mb-3"></textarea>
+                <button onclick="importFromExcel()" class="w-full bg-blue-600 text-white font-black py-3 rounded-xl text-[10px] uppercase">Thêm vào bộ nhớ</button>
+                
+                <div class="mt-6">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-xs font-black text-slate-800 uppercase">Quản lý đội ngũ</h2>
+                        <span id="staff-count-label" class="text-[8px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">0 người</span>
+                    </div>
+                    <div id="staff-preview" class="space-y-2 max-h-[400px] overflow-y-auto no-scrollbar"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: LỊCH SỬ -->
+        <div id="tab-history" class="hidden space-y-4 animate-fade-in">
+            <div class="bg-white rounded-2xl shadow-sm p-4 border border-slate-200 grid grid-cols-2 gap-3">
+                <div class="bg-blue-50 p-3 rounded-xl border border-blue-100 text-center">
+                    <p class="text-[8px] font-black text-blue-400 uppercase">Tổng tiền tháng</p>
+                    <p id="history-total-salary" class="text-sm font-black text-blue-700">0 đ</p>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+                    <p class="text-[8px] font-black text-slate-400 uppercase">Số Show</p>
+                    <p id="history-total-shows" class="text-sm font-black text-slate-700">0</p>
+                </div>
+                <button onclick="exportMonthExcel()" class="col-span-2 bg-green-600 text-white py-3 rounded-xl font-black text-[9px] uppercase">Xuất Excel Tháng</button>
+            </div>
+            <div id="history-list" class="space-y-3"></div>
+            <div id="history-empty" class="hidden py-10 text-center text-slate-300 font-black text-[10px] uppercase italic">Chưa có show lưu trữ</div>
+        </div>
+    </div>
+
+    <!-- Thanh điều hướng dưới cùng cho Mobile (Tuỳ chọn) -->
+    <div class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 z-50 safe-area-bottom shadow-2xl">
+        <button onclick="switchTab('calc')" class="flex flex-col items-center p-1">
+            <span class="text-[18px]">📊</span>
+            <span class="text-[8px] font-black uppercase text-slate-400">Máy tính</span>
+        </button>
+        <button onclick="switchTab('staff')" class="flex flex-col items-center p-1">
+            <span class="text-[18px]">👥</span>
+            <span class="text-[8px] font-black uppercase text-slate-400">Nhân sự</span>
+        </button>
+        <button onclick="switchTab('history')" class="flex flex-col items-center p-1">
+            <span class="text-[18px]">📂</span>
+            <span class="text-[8px] font-black uppercase text-slate-400">Lịch sử</span>
+        </button>
+    </div>
+
+    <script>
+        const firebaseConfig = JSON.parse(__firebase_config);
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'lighting-calc-mobile-v1';
+
+        const DEFAULT_SALARY = 900000;
+        const DEFAULT_ROLE = "Lighting";
+        const ROLES = ["Gaffer", "Best Boy Electric", "Electrician", "Genny Op", "Lighting Programmer", "Lighting", "Key Grip", "Best Boy Grip", "Grip", "Trainee"];
+
+        let staffList = JSON.parse(localStorage.getItem('staff_lighting_v7')) || [];
+        let selectedStaff = new Set();
+        let lastResult = null;
+        let editingShowId = null; 
+        window.historyCache = [];
+
+        function switchTab(tab) {
+            ['calc', 'history', 'staff'].forEach(t => {
+                const el = document.getElementById('tab-' + t);
+                if(el) el.classList.add('hidden');
+            });
+            document.getElementById('tab-' + tab).classList.remove('hidden');
+            if (tab === 'calc') renderSelectionGrid();
+            if (tab === 'staff') renderStaffSettings();
+            if (tab === 'history') loadHistory();
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+
+        function setTimeNow(prefix) {
+            const now = new Date();
+            document.getElementById(`${prefix}-date`).value = now.toISOString().split('T')[0];
+            document.getElementById(`${prefix}-hour`).value = now.getHours();
+            document.getElementById(`${prefix}-min`).value = now.getMinutes();
+        }
+
+        function resetToNewShow() {
+            editingShowId = null;
+            document.getElementById('edit-mode-indicator').classList.add('hidden');
+            document.getElementById('job-name').value = "";
+            setTimeNow('onset');
+            selectedStaff.clear();
+            renderSelectionGrid();
+            document.getElementById('result-card').classList.add('hidden');
+            document.getElementById('placeholder-card').classList.remove('hidden');
+            updateSaveButtonStatus();
+        }
+
+        function updateSaveButtonStatus() {
+            const btn = document.getElementById('save-btn');
+            if (!btn) return;
+            if (editingShowId) {
+                btn.innerText = "CẬP NHẬT CLOUD";
+                btn.classList.replace('bg-blue-600', 'bg-orange-600');
+            } else {
+                btn.innerText = "LƯU CLOUD";
+                btn.classList.replace('bg-orange-600', 'bg-blue-600');
+            }
+        }
+
+        function saveStaff() { localStorage.setItem('staff_lighting_v7', JSON.stringify(staffList)); }
+        
+        function renderStaffSettings() {
+            const container = document.getElementById('staff-preview');
+            document.getElementById('staff-count-label').innerText = `${staffList.length} người`;
+            if (staffList.length === 0) {
+                container.innerHTML = `<p class="py-10 text-center text-slate-300 text-[8px] font-black uppercase">Trống</p>`;
+                return;
+            }
+            container.innerHTML = staffList.map((s, i) => `
+                <div class="bg-slate-50 p-2 rounded-xl border border-slate-100 flex items-center justify-between animate-fade-in">
+                    <div>
+                        <p class="text-[10px] font-black text-slate-800 uppercase">${s.name}</p>
+                        <p class="text-[8px] text-blue-500 font-bold">${s.role}</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="number" value="${s.baseSalary}" onchange="staffList[${i}].baseSalary=parseInt(this.value); saveStaff()" class="w-16 bg-white border border-slate-200 rounded px-1 py-1 text-[9px] font-bold">
+                        <button onclick="staffList.splice(${i},1); saveStaff(); renderStaffSettings()" class="text-red-400 font-bold px-2">×</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function importFromExcel() {
+            const lines = document.getElementById('excel-paste').value.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
+            lines.forEach(name => {
+                const cleanName = name.replace(/^\d+[\.\s\-]+/, '').trim();
+                if (cleanName && !staffList.some(s=>s.name===cleanName)) {
+                    staffList.push({ name: cleanName, role: DEFAULT_ROLE, baseSalary: DEFAULT_SALARY });
+                }
+            });
+            saveStaff(); renderStaffSettings(); document.getElementById('excel-paste').value="";
+        }
+
+        function renderSelectionGrid() {
+            const container = document.getElementById('staff-selection-grid');
+            container.innerHTML = staffList.map((s, i) => `
+                <div class="h-14">
+                    <input type="checkbox" id="check-${i}" class="hidden staff-checkbox" onchange="toggleStaffSelection('${s.name}')" ${selectedStaff.has(s.name)?'checked':''}>
+                    <label for="check-${i}" class="staff-label flex flex-col p-2 border border-slate-200 rounded-xl cursor-pointer h-full justify-center text-center transition-all bg-white overflow-hidden">
+                        <span class="text-[9px] font-black truncate">${s.name}</span>
+                        <span class="text-[7px] font-bold text-slate-400 uppercase">${s.role}</span>
+                    </label>
+                </div>
+            `).join('');
+        }
+        function toggleStaffSelection(n) { if(selectedStaff.has(n)) selectedStaff.delete(n); else selectedStaff.add(n); }
+        function selectAll(b) { staffList.forEach(s => b ? selectedStaff.add(s.name) : selectedStaff.delete(s.name)); renderSelectionGrid(); }
+
+        function calculate() {
+            const job = document.getElementById('job-name').value || "Dự án mới";
+            const onD = document.getElementById('onset-date').value, wrD = document.getElementById('wrap-date').value;
+            const onH = parseInt(document.getElementById('onset-hour').value)||0, onM = parseInt(document.getElementById('onset-min').value)||0;
+            const wrH = parseInt(document.getElementById('wrap-hour').value)||0, wrM = parseInt(document.getElementById('wrap-min').value)||0;
+            
+            const start = new Date(`${onD}T${onH.toString().padStart(2,'0')}:${onM.toString().padStart(2,'0')}:00`);
+            const end = new Date(`${wrD}T${wrH.toString().padStart(2,'0')}:${wrM.toString().padStart(2,'0')}:00`);
+            
+            if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) { alert("Giờ quay không đúng!"); return; }
+            if (selectedStaff.size === 0) { alert("Chọn ít nhất 1 người!"); return; }
+
+            const diffMin = (end - start)/60000;
+            let factor = 1.0;
+            if (diffMin > 18 * 60) factor = 2.0; 
+            else if (diffMin > 15 * 60 + 30) factor = 1.5;
+            else if (diffMin > 15 * 60 + 10) factor = 1.25;
+
+            const data = Array.from(selectedStaff).map(name => {
+                const s = staffList.find(x => x.name === name);
+                const oldP = (lastResult && lastResult.data) ? lastResult.data.find(d => d.name === name) : null;
+                return {
+                    name, role: s ? s.role : DEFAULT_ROLE, base: s ? s.baseSalary : DEFAULT_SALARY,
+                    onset: `${onH}:${onM.toString().padStart(2,'0')}`, wrap: `${wrH}:${wrM.toString().padStart(2,'0')}`,
+                    workDay: factor, deduct: oldP ? oldP.deduct : 0, note: oldP ? oldP.note : ""
+                };
+            });
+
+            lastResult = { date: onD, job, data, diffMin, workDayFactor: factor, monthKey: onD.substring(0, 7) };
+            renderResultUI();
+            window.scrollTo({top: document.getElementById('result-card').offsetTop - 20, behavior: 'smooth'});
+        }
+
+        function renderResultUI() {
+            document.getElementById('placeholder-card').classList.add('hidden');
+            document.getElementById('result-card').classList.remove('hidden');
+            document.getElementById('res-date-display').innerText = `Ngày: ${lastResult.date.split('-').reverse().join('/')}`;
+            document.getElementById('res-job-display').innerText = lastResult.job;
+            document.getElementById('total-time').innerText = `${Math.floor(lastResult.diffMin/60)}h ${Math.floor(lastResult.diffMin%60)}p`;
+            document.getElementById('total-work-day').innerText = lastResult.workDayFactor.toFixed(2);
+            document.getElementById('total-group-count').innerText = lastResult.data.length + ' người';
+            
+            const tbody = document.getElementById('salary-table-body');
+            tbody.innerHTML = lastResult.data.map((i, idx) => `
+                <tr class="bg-white border-b border-slate-50">
+                    <td class="px-2 py-3 font-bold">${i.name}</td>
+                    <td class="px-2 py-3 text-center font-black">${i.workDay.toFixed(2)}</td>
+                    <td class="px-2 py-3 text-center no-print">
+                        <div class="flex items-center justify-center gap-1">
+                            <button onclick="updateDeduct(${idx}, 0.25)" class="w-5 h-5 bg-red-50 text-red-500 rounded text-[10px]">-</button>
+                            <span class="text-[9px] w-6">${i.deduct > 0 ? i.deduct.toFixed(2) : '0'}</span>
+                            <button onclick="updateDeduct(${idx}, -0.25)" class="w-5 h-5 bg-slate-100 rounded text-[10px]">+</button>
+                        </div>
+                    </td>
+                    <td class="px-2 py-3 text-right font-black text-blue-600">${new Intl.NumberFormat('vi-VN').format(Math.max(0, i.base * (i.workDay - i.deduct)))}</td>
+                </tr>
+            `).join('');
+            
+            const total = lastResult.data.reduce((acc, curr) => acc + Math.max(0, curr.base * (curr.workDay - curr.deduct)), 0);
+            document.getElementById('total-group-salary').innerText = new Intl.NumberFormat('vi-VN').format(total) + ' đ';
+            updateSaveButtonStatus();
+        }
+
+        function updateDeduct(idx, v) { lastResult.data[idx].deduct = Math.max(0, lastResult.data[idx].deduct + v); renderResultUI(); }
+
+        async function saveShowToCloud() {
+            if (!lastResult) return;
+            const btn = document.getElementById('save-btn');
+            btn.disabled = true; btn.innerText = "...";
+            try {
+                const showsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('shows');
+                if (editingShowId) {
+                    await showsRef.doc(editingShowId).set({ ...lastResult, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                } else {
+                    const docRef = await showsRef.add({ ...lastResult, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+                    editingShowId = docRef.id;
+                    document.getElementById('edit-mode-indicator').classList.remove('hidden');
+                }
+                btn.innerText = "Xong ✓";
+                setTimeout(() => { updateSaveButtonStatus(); btn.disabled = false; }, 1500);
+            } catch (err) { alert("Lỗi lưu!"); btn.disabled = false; updateSaveButtonStatus(); }
+        }
+
+        async function loadHistory() {
+            const list = document.getElementById('history-list'), empty = document.getElementById('history-empty');
+            const cm = new Date().toISOString().substring(0, 7);
+            try {
+                const snap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('shows').get();
+                const history = []; snap.forEach(doc => history.push({ id: doc.id, ...doc.data() }));
+                const filtered = history.filter(s => s.monthKey === cm).sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                window.historyCache = filtered;
+
+                let total = 0; filtered.forEach(s => s.data.forEach(p => total += Math.max(0, p.base * (p.workDay - p.deduct))));
+                document.getElementById('history-total-salary').innerText = new Intl.NumberFormat('vi-VN').format(total) + ' đ';
+                document.getElementById('history-total-shows').innerText = filtered.length;
+
+                if (filtered.length === 0) { empty.classList.remove('hidden'); list.innerHTML = ""; return; }
+                empty.classList.add('hidden');
+                list.innerHTML = filtered.map(s => `
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center animate-fade-in">
+                        <div onclick="editFromHistory('${s.id}')" class="flex-grow">
+                            <span class="text-[8px] font-black text-blue-500 uppercase">${s.date.split('-').reverse().join('/')}</span>
+                            <h3 class="font-black text-slate-800 uppercase text-[10px] truncate">${s.job}</h3>
+                            <p class="text-[9px] text-slate-400">${s.data.length} người • ${new Intl.NumberFormat('vi-VN').format(s.data.reduce((a,c)=>a+Math.max(0,c.base*(c.workDay-c.deduct)),0))} đ</p>
+                        </div>
+                        <button onclick="deleteShow('${s.id}')" class="text-red-200 p-2">×</button>
+                    </div>
+                `).join('');
+            } catch (err) { console.error(err); }
+        }
+
+        async function deleteShow(id) { if(confirm("Xóa vĩnh viễn?")) { await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('shows').doc(id).delete(); loadHistory(); } }
+
+        function editFromHistory(id) {
+            const s = window.historyCache.find(x => x.id === id);
+            if (!s) return;
+            editingShowId = id;
+            lastResult = s;
+            document.getElementById('job-name').value = s.job;
+            document.getElementById('onset-date').value = s.date;
+            document.getElementById('wrap-date').value = s.date;
+            if(s.data && s.data.length > 0) {
+                const [h, m] = s.data[0].onset.split(':');
+                document.getElementById('onset-hour').value = h;
+                document.getElementById('onset-min').value = m;
+                const [wh, wm] = s.data[0].wrap.split(':');
+                document.getElementById('wrap-hour').value = wh;
+                document.getElementById('wrap-min').value = wm;
+            }
+            selectedStaff.clear();
+            s.data.forEach(p => selectedStaff.add(p.name));
+            document.getElementById('edit-mode-indicator').classList.remove('hidden');
+            switchTab('calc');
+            renderSelectionGrid();
+            renderResultUI();
+        }
+
+        function exportMonthExcel() {
+            if (window.historyCache.length === 0) return;
+            const wb = XLSX.utils.book_new();
+            const detailData = [["Ngày", "Dự án", "Họ tên", "Vị trí", "Công", "Trừ", "Thành tiền", "Ghi chú"]];
+            window.historyCache.forEach(s => s.data.forEach(p => {
+                detailData.push([s.date, s.job, p.name, p.role, p.workDay, p.deduct, Math.max(0, p.base * (p.workDay - p.deduct)), p.note || ""]);
+            }));
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailData), "Báo Cáo");
+            XLSX.writeFile(wb, `Lighting_Report.xlsx`);
+        }
+
+        async function initAuth() {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await auth.signInWithCustomToken(__initial_auth_token);
+            } else { await auth.signInAnonymously(); }
+        }
+
+        window.onload = () => { initAuth(); setTimeNow('onset'); renderStaffSettings(); renderSelectionGrid(); };
+        auth.onAuthStateChanged(user => { if (user) document.getElementById('auth-status').innerText = "V1.0 - ONLINE"; });
+    </script>
+</body>
+</html>
